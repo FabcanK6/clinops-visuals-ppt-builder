@@ -1,0 +1,70 @@
+Work Instructions: Building the ClinOps Visuals PowerPoint Deck from Power BI PDFs
+
+1. Purpose
+This process automates converting a fixed set of Power BI–exported PDFs into a single, ordered PowerPoint deck.
+The script renders each PDF page to an image, crops the top 10% to remove slicers/bookmarks, and inserts it into slides. The output is a presentation named ClinOps_Visuals_PPT_Deck_.pptx with a cover slide and study-organized sections.
+
+2. Scope
+•	Applies to PDF exports placed in the Downloads folder.
+•	Intended for interns and team members generating a standardized executive-ready deck for ClinOps visuals.
+
+3. Tools Required
+•	Python 3.x on Windows
+•	Python packages: 
+o	PyMuPDF (fitz) for PDF → image conversion
+o	python-pptx for PowerPoint creation
+o	Pillow (PIL) for image cropping
+•	File system access to ~/Downloads for input PDFs and the final output PPTX
+•	Source PDFs exported from Power BI with expected names or raw downloaded names (script auto-renames if needed)
+
+4. Components Overview
+Objective:
+Create a single PowerPoint deck from multiple Power BI PDF outputs, preserving a fixed study order, cropping the top 10%, and including a cover page.
+Key Actions:
+•	Scan Downloads (source location) for a specific set of PDF files: 
+o	FullReport.pdf (contains GD-2502 section)
+o	For each study: BSLvACT, SiteIDMetrics, ACTENRSummary variants for:
+GD-2503, MG, CIDP, SjD, RA, CLE
+•	Convert each PDF page to PNG at DPI = 200
+•	Crop 10% from the top of each image
+•	Create a cover slide titled Power BI ClinOps_Visuals Export
+•	Insert FullReport pages first
+•	Group remaining PDFs by study in the order: GD-2503 → MG → CIDP → SjD → RA → CLE
+•	Add a divider slide per study, then append all PDF pages for that study
+•	Save the final deck as ClinOps_Visuals_PPT_Deck_<date>.pptx in Downloads
+
+5. Step-by-Step Instructions
+5.1 Prepare Input Files
+1.	Export the required PDFs from Power BI and place them in Downloads. 
+o	If files have raw names like ClinOps_Visuals (1).pdf, the script will auto-rename them.
+2.	Confirm the files open correctly and contain expected pages.
+5.2 Run the Script
+1.	Open Command Prompt and navigate to the script directory.
+2.	Execute: ClinOps_Weekly_PPT_Deck.py
+3.	The script will: 
+o	Auto-rename raw downloaded files to expected names if needed
+o	Convert pages to images (PNG, 200 DPI)
+o	Crop 10% from the top of each image
+o	Build the deck with a cover slide, then FullReport pages, then study sections in fixed order
+o	Save the deck as ClinOps_Visuals_PPT_Deck_<date>.pptx 
+5.3 Verify Output
+•	Open the generated PPTX and confirm: 
+o	Cover slide title: Power BI ClinOps_Visuals Export
+o	FullReport pages appear first
+o	Study order: GD-2503 → MG → CIDP → SjD → RA → CLE
+o	Each study has a divider slide labeled “Study: ” followed by all pages from its three PDFs
+o	Images are cropped at the top (10%) and scaled proportionally
+
+6. Maintenance
+•	Update EXPECTED_TARGETS_ORDER or mapping if naming conventions change
+•	Adjust TOP_CROP["height_frac"] to change crop percentage
+•	Modify DPI for clarity vs. file size
+•	If PowerPoint layouts change, ensure slide layout indices still exist
+
+7. Best Practices
+•	Keep PDFs consistent in page dimensions for uniform slides
+•	Avoid spaces or case changes in file names; script expects exact matches
+•	If a PDF is missing, the script skips it. Review output for completeness
+•	Optimize PPTX for distribution if file size is large
+•	For different crop needs, adjust TOP_CROP["height_frac"] in the script
+

@@ -43,8 +43,20 @@ Post-Processing:
 Rename or archive PDFs.
 Upload the generated PPTX to SharePoint or Teams.
 
-
 Notify Stakeholders: Send an email or Teams message with the PPTX link.
+
+## Power Automate Integration Diagram
+
+Below is an example of how the Power Automate flow integrates with this script:
+
+![Power Automate Flow Diagram](assets/power_automate_flow.png)
+
+### Flow Overview:
+1. **Trigger**: Scheduled recurrence (e.g., every Friday at 2 PM).
+2. **Download PDFs**: Export from Power BI and save to target folder.
+3. **Run Script**: Execute `build_clinops_deck.py` on a local machine or VM.
+4. **Upload Output**: Save generated PPTX to SharePoint or Teams.
+5. **Notify Stakeholders**: Send email or Teams message with PPTX link.
 
 ### Benefits
 
@@ -53,3 +65,5 @@ Eliminates manual steps for building the deck.
 Ensures consistency and timeliness for executive reporting.
 
 Integrates seamlessly with existing Microsoft ecosystem tools.
+
+

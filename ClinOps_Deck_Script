@@ -1,0 +1,337 @@
+import os
+import shutil
+import datetime
+import fitz  # PyMuPDF
+from io import BytesIO
+from PIL import Image
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.enum.text import PP_ALIGN
+from pptx.dml.color import RGBColor
+
+# CONFIGURATION
+
+PDF_FOLDER = os.path.expanduser("~/Downloads")
+DATE_SUFFIX = datetime.datetime.now().strftime("%d%b%Y")
+OUTPUT_PPT = os.path.join(PDF_FOLDER, f"ClinOps_Visuals_PPT_Deck_{DATE_SUFFIX}.pptx")
+COVER_TITLE = "Power BI ClinOps_Visuals Export"
+DPI = 200
+
+# Insert the first study title within FullReport after the Nth slide
+FIRST_STUDY_TITLE = "Study: GD-2502"
+FIRST_STUDY_TITLE_AFTER_PAGE = 4  # insert after the 4th FullReport page
+
+# Optional image margins on slides (inches)
+IMAGE_MARGIN_INCHES = 0.0  # 0.0 = edge to edge
+
+# Fixed top-only crop configuration (no auto detection)
+TOP_CROP = {
+    "enabled": True,    # apply cropping to the top of every image
+    "height_frac": 0.10 # crop exactly 10% of image height from the top
+}
+
+# Auto rename flags
+DRY_RUN = False           # True = preview planned renames only
+FORCE_OVERWRITE = True    # allow moving a source onto an existing target
+BACKUP_EXISTING = False   # if overwriting, save <file>.bak before replace
+
+# EXPECTED OUTPUT FILENAMES IN FIXED ORDER
+
+EXPECTED_TARGETS_ORDER = [
+    "FullReport.pdf",
+    "BSLvACT_GD-2503.pdf", "SiteIDMetrics_GD-2503.pdf", "ACTENRSummary_GD-2503.pdf",
+    "BSLvACT_MG.pdf", "SiteIDMetrics_MG.pdf", "ACTENRSummary_MG.pdf",
+    "BSLvACT_CIDP.pdf", "SiteIDMetrics_CIDP.pdf", "ACTENRSummary_CIDP.pdf",
+    "BSLvACT_SjD.pdf", "SiteIDMetrics_SjD.pdf", "ACTENRSummary_SjD.pdf",
+    "BSLvACT_RA.pdf", "SiteIDMetrics_RA.pdf", "ACTENRSummary_RA.pdf",
+    "BSLvACT_CLE.pdf", "SiteIDMetrics_CLE.pdf", "ACTENRSummary_CLE.pdf",
+]
+
+# MAPPING: DOWNLOADED NAMES → TARGET SCRIPT NAMES
+
+DOWNLOAD_PATTERN_BASE = "ClinOps_Visuals"
+FULLREPORT_BASENAME = "ClinOps_Visual"  # singular for FullReport
+
+TARGET_FROM_DOWNLOADED = {
+    # FullReport (falls back to ClinOps_Visuals.pdf if needed)
+    "FullReport.pdf": f"{FULLREPORT_BASENAME}.pdf",
+
+    # GD-2503
+    "BSLvACT_GD-2503.pdf": f"{DOWNLOAD_PATTERN_BASE} (1).pdf",
+    "SiteIDMetrics_GD-2503.pdf": f"{DOWNLOAD_PATTERN_BASE} (7).pdf",
+    "ACTENRSummary_GD-2503.pdf": f"{DOWNLOAD_PATTERN_BASE} (13).pdf",
+
+    # MG
+    "BSLvACT_MG.pdf": f"{DOWNLOAD_PATTERN_BASE} (2).pdf",
+    "SiteIDMetrics_MG.pdf": f"{DOWNLOAD_PATTERN_BASE} (8).pdf",
+    "ACTENRSummary_MG.pdf": f"{DOWNLOAD_PATTERN_BASE} (14).pdf",
+
+    # CIDP
+    "BSLvACT_CIDP.pdf": f"{DOWNLOAD_PATTERN_BASE} (3).pdf",
+    "SiteIDMetrics_CIDP.pdf": f"{DOWNLOAD_PATTERN_BASE} (9).pdf",
+    "ACTENRSummary_CIDP.pdf": f"{DOWNLOAD_PATTERN_BASE} (15).pdf",
+
+    # SjD
+    "BSLvACT_SjD.pdf": f"{DOWNLOAD_PATTERN_BASE} (4).pdf",
+    "SiteIDMetrics_SjD.pdf": f"{DOWNLOAD_PATTERN_BASE} (10).pdf",
+    "ACTENRSummary_SjD.pdf": f"{DOWNLOAD_PATTERN_BASE} (16).pdf",
+
+    # RA
+    "BSLvACT_RA.pdf": f"{DOWNLOAD_PATTERN_BASE} (5).pdf",
+    "SiteIDMetrics_RA.pdf": f"{DOWNLOAD_PATTERN_BASE} (11).pdf",
+    "ACTENRSummary_RA.pdf": f"{DOWNLOAD_PATTERN_BASE} (17).pdf",
+
+    # CLE
+    "BSLvACT_CLE.pdf": f"{DOWNLOAD_PATTERN_BASE} (6).pdf",
+    "SiteIDMetrics_CLE.pdf": f"{DOWNLOAD_PATTERN_BASE} (12).pdf",
+    "ACTENRSummary_CLE.pdf": f"{DOWNLOAD_PATTERN_BASE} (18).pdf",
+}
+
+# HELPER FUNCTIONS
+
+def safe_join(*args):
+    return os.path.join(*args)
+
+def exists(path):
+    return os.path.exists(path)
+
+def backup_file(path):
+    if not exists(path):
+        return
+    backup_path = path + ".bak"
+    if exists(backup_path):
+        os.remove(backup_path)
+    shutil.copy2(path, backup_path)
+    print(f"  Backed up existing target to {os.path.basename(backup_path)}")
+
+def get_layout(prs, idx_fallback):
+    try:
+        return prs.slide_layouts[idx_fallback]
+    except Exception:
+        # Fallback to blank (often 6), else first available
+        try:
+            return prs.slide_layouts[6]
+        except Exception:
+            return prs.slide_layouts[0]
+
+def add_title_slide(prs, title_text, subtitle_text=None):
+    slide = prs.slides.add_slide(get_layout(prs, 0))  # Title Slide
+    if slide.shapes.title is not None:
+        slide.shapes.title.text = title_text
+    else:
+        add_divider(prs, title_text)
+    if subtitle_text:
+        subtitle_placeholder = None
+        for shape in slide.shapes:
+            if getattr(shape, "is_placeholder", False) and "subtitle" in str(shape.placeholder_format.type).lower():
+                subtitle_placeholder = shape
+                break
+        if subtitle_placeholder is not None:
+            subtitle_placeholder.text = subtitle_text
+        else:
+            tb = slide.shapes.add_textbox(Inches(1), Inches(4.2), prs.slide_width - Inches(2), Inches(1))
+            tf = tb.text_frame
+            tf.clear()
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = subtitle_text
+            p.alignment = PP_ALIGN.CENTER
+            run.font.size = Pt(18)
+    return slide
+
+def add_divider(prs, text):
+    """
+    Adds a robust divider slide. Tries Title Only, Title & Content, then Title.
+    Falls back to a blank slide + centered textbox.
+    """
+    for idx in (5, 1, 0):
+        layout = get_layout(prs, idx)
+        slide = prs.slides.add_slide(layout)
+        title_shape = slide.shapes.title
+        if title_shape is not None:
+            title_shape.text = text
+            return slide
+    slide = prs.slides.add_slide(get_layout(prs, 6))  # Blank
+    left = Inches(1)
+    top = Inches(2)
+    width = prs.slide_width - Inches(2)
+    height = Inches(1.5)
+    tb = slide.shapes.add_textbox(left, top, width, height)
+    tf = tb.text_frame
+    tf.clear()
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = text
+    p.alignment = PP_ALIGN.CENTER
+    run.font.size = Pt(40)
+    run.font.bold = True
+    run.font.color.rgb = RGBColor(0, 0, 0)
+    return slide
+
+def render_page_to_png(page, dpi=DPI):
+    zoom = dpi / 72.0
+    mat = fitz.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat, alpha=False)
+    return pix.tobytes("png")
+
+def crop_top_fraction(img_bytes):
+    """
+    Crops a fixed fraction from the top of the image.
+    Uses TOP_CROP['height_frac']; no auto detection.
+    """
+    if not TOP_CROP.get("enabled", False):
+        return img_bytes
+    frac = float(TOP_CROP.get("height_frac", 0.0))
+    if frac <= 0:
+        return img_bytes
+    with Image.open(BytesIO(img_bytes)) as im:
+        im_rgb = im.convert("RGB")
+        w, h = im_rgb.size
+        cut_px = int(h * frac)
+        cut_px = max(0, min(cut_px, h - 1))
+        box = (0, cut_px, w, h)  # left, top, right, bottom
+        cropped = im_rgb.crop(box)
+        out = BytesIO()
+        cropped.save(out, format="PNG")
+        return out.getvalue()
+
+def add_image_slide(prs, img_bytes, margin_in=IMAGE_MARGIN_INCHES):
+    slide = prs.slides.add_slide(get_layout(prs, 6))  # Blank
+    slide_w = prs.slide_width
+    slide_h = prs.slide_height
+    margin = Inches(margin_in)
+    with Image.open(BytesIO(img_bytes)) as im:
+        img_w_px, img_h_px = im.size
+        max_w = slide_w - 2 * margin
+        max_h = slide_h - 2 * margin
+        img_ratio = img_w_px / img_h_px
+        frame_ratio = max_w / max_h
+        if img_ratio > frame_ratio:
+            pic_w = int(max_w)
+            pic_h = int(pic_w / img_ratio)
+        else:
+            pic_h = int(max_h)
+            pic_w = int(pic_h * img_ratio)
+        left = int((slide_w - pic_w) // 2)
+        top = int((slide_h - pic_h) // 2)
+        stream = BytesIO(img_bytes)
+        slide.shapes.add_picture(stream, left, top, width=pic_w, height=pic_h)
+    return slide
+
+# AUTO RENAME LOGIC
+
+def auto_rename_downloads(pdf_folder=PDF_FOLDER):
+    """
+    Renames downloaded PDFs to target names expected by the deck builder.
+    Uses exact mapping. Special fallback for FullReport: tries ClinOps_Visuals.pdf if ClinOps_Visual.pdf is absent.
+    """
+    print("\n=== Auto-Rename: ClinOps_Visuals → Expected Script Names ===")
+    planned = []
+    missing_sources = []
+    already_correct = []
+    for target_name, source_name in TARGET_FROM_DOWNLOADED.items():
+        source_path = safe_join(pdf_folder, source_name)
+        target_path = safe_join(pdf_folder, target_name)
+        if target_name == "FullReport.pdf" and not exists(source_path):
+            alt_source = safe_join(pdf_folder, f"{DOWNLOAD_PATTERN_BASE}.pdf")
+            if exists(alt_source):
+                source_path = alt_source
+        if exists(target_path):
+            if FORCE_OVERWRITE and exists(source_path):
+                planned.append((source_path, target_path, True))
+            else:
+                already_correct.append((target_name, target_path))
+            continue
+        if not exists(source_path):
+            missing_sources.append((target_name, os.path.basename(source_path)))
+            continue
+        planned.append((source_path, target_path, False))
+    if planned and not DRY_RUN:
+        for src, dst, ow in planned:
+            if ow and BACKUP_EXISTING and exists(dst):
+                backup_file(dst)
+            shutil.move(src, dst)
+        print("Renames completed.")
+    elif planned and DRY_RUN:
+        print("DRY_RUN is ON. No files were renamed.")
+    if missing_sources:
+        print("Missing downloads:")
+        for tgt, src in missing_sources:
+            print(f"  Need {src} → {tgt}")
+    final_paths = []
+    for target_name in EXPECTED_TARGETS_ORDER:
+        p = safe_join(pdf_folder, target_name)
+        if exists(p):
+            final_paths.append(p)
+    return final_paths
+
+# DECK BUILDER
+
+def build_ppt(pdf_files):
+    """
+    Builds the PowerPoint deck from the provided ordered list of target PDF paths.
+    """
+    expected_absolute = [safe_join(PDF_FOLDER, f) for f in EXPECTED_TARGETS_ORDER]
+    missing_targets = [p for p in expected_absolute if p not in pdf_files and not exists(p)]
+    if missing_targets:
+        print("Missing targets before build:")
+        for m in missing_targets:
+            print(f"  {os.path.basename(m)}")
+    prs = Presentation()
+    now_str = datetime.datetime.now().strftime("%b %d, %Y %I:%M %p")
+    add_title_slide(prs, COVER_TITLE, subtitle_text=f"Generated {now_str}")
+    full_report = [p for p in pdf_files if os.path.basename(p) == "FullReport.pdf"]
+    if full_report:
+        fr_path = full_report[0]
+        with fitz.open(fr_path) as doc:
+            print(f"Adding FullReport: {os.path.basename(fr_path)} ({doc.page_count} pages)")
+            for idx in range(doc.page_count):
+                page = doc.load_page(idx)
+                img = render_page_to_png(page, dpi=DPI)
+                img = crop_top_fraction(img)
+                add_image_slide(prs, img)
+                if (idx + 1) == FIRST_STUDY_TITLE_AFTER_PAGE:
+                    add_divider(prs, FIRST_STUDY_TITLE)
+            if doc.page_count < FIRST_STUDY_TITLE_AFTER_PAGE:
+                print(f"Note: FullReport has only {doc.page_count} pages; divider after page {FIRST_STUDY_TITLE_AFTER_PAGE} was not inserted.")
+    else:
+        print("Warning: FullReport.pdf not found; skipping FullReport section.")
+    study_order = ["GD-2503", "MG", "CIDP", "SjD", "RA", "CLE"]
+    grouped = {study: [] for study in study_order}
+    for pdf in pdf_files:
+        base = os.path.basename(pdf)
+        if base == "FullReport.pdf":
+            continue
+        for study in study_order:
+            if f"_{study}.pdf" in base:
+                grouped[study].append(pdf)
+    for study in study_order:
+        if grouped[study]:
+            add_divider(prs, f"Study: {study}")
+            for pdf in grouped[study]:
+                with fitz.open(pdf) as doc:
+                    print(f"Adding {os.path.basename(pdf)} ({doc.page_count} pages)")
+                    for i in range(doc.page_count):
+                        page = doc.load_page(i)
+                        img = render_page_to_png(page, dpi=DPI)
+                        img = crop_top_fraction(img)
+                        add_image_slide(prs, img)
+    prs.save(OUTPUT_PPT)
+    print(f"PPT created: {OUTPUT_PPT}")
+
+# MAIN
+
+if __name__ == "__main__":
+    final_targets = auto_rename_downloads(PDF_FOLDER)
+    total_expected = len(EXPECTED_TARGETS_ORDER)
+    present_count = len(final_targets)
+    print(f"Post-rename presence: {present_count}/{total_expected} target files.")
+    ordered_existing_paths = [
+        safe_join(PDF_FOLDER, f)
+        for f in EXPECTED_TARGETS_ORDER
+        if exists(safe_join(PDF_FOLDER, f))
+    ]
+    if not ordered_existing_paths:
+        print("No target PDFs found. Ensure downloads are present and mapped, then re-run.")
+    else:
+        build_ppt(ordered_existing_paths)

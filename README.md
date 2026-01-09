@@ -19,3 +19,37 @@ This Python script automates the creation of a standardized PowerPoint deck from
   - [PyMuPDF](https://pypi.org/project/PyMuPDF/) (`fitz`)
   - [python-pptx](https://pypi.org/project/python-pptx/)
   - [Pillow](https://pypi.org/project/Pillow/)
+
+## Automation with Power Automate
+This script can be integrated with Microsoft Power Automate to enable scheduled or event-driven execution without manual intervention. Using Power Automate, you can:
+
+Schedule Runs: Trigger the Python script at specific times (e.g., weekly or monthly) to generate the ClinOps Visuals deck automatically.
+Cloud Execution: Use a Power Automate Desktop flow or a cloud flow with a connector to run the script on a designated machine.
+File Handling:
+
+Automatically download Power BI-exported PDFs to the target folder (e.g., ~/Downloads or a shared directory).
+Move the generated PPTX to a SharePoint site or Teams channel for easy access.
+
+
+Notifications: Send an email or Teams message when the deck is ready, including a link to the PPTX file.
+
+Example Flow Steps
+
+Trigger: Scheduled recurrence (e.g., every Friday at 2 PM).
+Download PDFs: Use Power BI export actions or browser automation to save files.
+Run Script: Execute build_clinops_deck.py on your local machine or a VM using Power Automate Desktop.
+Post-Processing:
+
+Rename or archive PDFs.
+Upload the generated PPTX to SharePoint or Teams.
+
+
+Notify Stakeholders: Send an email or Teams message with the PPTX link.
+
+### Benefits
+
+Eliminates manual steps for building the deck.
+
+Ensures consistency and timeliness for executive reporting.
+
+Integrates seamlessly with existing Microsoft ecosystem tools.
